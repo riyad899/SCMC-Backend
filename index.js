@@ -218,8 +218,23 @@ const startServer = async () => {
         app.get('/users', async (req, res) => {
             try {
                 const db = getDB();
-                const users = await db.collection('users').find({}).toArray();
-                res.status(200).json(users);
+                const usersCollection = db.collection('users');
+
+                // Check if email query parameter is provided
+                const email = req.query.email;
+
+                if (email) {
+                    // If email is provided, find specific user
+                    const user = await usersCollection.findOne({ email });
+                    if (!user) {
+                        return res.status(404).json({ message: 'User not found' });
+                    }
+                    res.status(200).json(user);
+                } else {
+                    // If no email provided, return all users
+                    const users = await usersCollection.find({}).toArray();
+                    res.status(200).json(users);
+                }
             } catch (error) {
                 res.status(500).json({ message: 'Failed to fetch users', error: error.message });
             }
@@ -243,6 +258,59 @@ const startServer = async () => {
             }
         });
 
+
+
+
+        // this is announcement part--------------------------------------
+        app.post('/api/announcements', async (req, res) => {
+  try {
+    const db = getDB();
+    const announcementsCollection = db.collection('announcements');
+
+    const { title, content, author, date } = req.body;
+
+    if (!title || !content || !author) {
+      return res.status(400).json({ message: 'Title, content, and author are required' });
+    }
+
+    const announcement = {
+      title,
+      content,
+      author,
+      date: date ? new Date(date) : new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await announcementsCollection.insertOne(announcement);
+
+    res.status(201).json({
+      message: 'Announcement posted successfully',
+      announcementId: result.insertedId,
+    });
+  } catch (error) {
+    console.error('Error posting announcement:', error.message);
+    res.status(500).json({ message: 'Failed to post announcement', error: error.message });
+  }
+});
+
+app.get('/announcements', async (req, res) => {
+  try {
+    const db = getDB();
+    const announcementsCollection = db.collection('announcements');
+
+    // Optionally sort by date descending
+    const announcements = await announcementsCollection
+      .find({})
+      .sort({ date: -1 })
+      .toArray();
+
+    res.status(200).json(announcements);
+  } catch (error) {
+    console.error('Error fetching announcements:', error.message);
+    res.status(500).json({ message: 'Failed to fetch announcements', error: error.message });
+  }
+});
 
 
 
