@@ -64,7 +64,6 @@ const startServer = async () => {
 
 
         // this is court booking part--------------------------------------
-
         app.get('/bookings', async (req, res) => {
             try {
                 const db = getDB();
@@ -80,6 +79,23 @@ const startServer = async () => {
             } catch (error) {
                 console.error('Error fetching bookings:', error.message);
                 res.status(500).json({ message: 'Failed to fetch bookings', error: error.message });
+            }
+        });
+
+        // Move this route BEFORE the :email route to avoid conflicts
+        app.get('/bookings/status', async (req, res) => {
+            try {
+                const db = getDB();
+                const bookingsCollection = db.collection('bookings');
+
+                const pendingBookings = await bookingsCollection
+                    .find({ status: "pending" })
+                    .toArray();
+
+                res.status(200).json(pendingBookings);
+            } catch (error) {
+                console.error("Error fetching pending bookings:", error.message);
+                res.status(500).json({ message: "Failed to fetch pending bookings", error: error.message });
             }
         });
 
@@ -121,6 +137,80 @@ const startServer = async () => {
                 res.status(500).json({ message: 'Failed to delete booking', error: error.message });
             }
         });
+
+
+        // Update booking status to approved
+        app.patch('/bookings/:id/status', async (req, res) => {
+            try {
+                const db = getDB();
+                const bookingsCollection = db.collection('bookings');
+                const usersCollection = db.collection('users');
+                const bookingId = req.params.id;
+                const { status } = req.body;
+
+                // Validate status
+                const validStatuses = ['pending', 'approved', 'rejected', 'cancelled'];
+                if (!status || !validStatuses.includes(status)) {
+                    return res.status(400).json({
+                        message: 'Invalid status. Valid statuses are: pending, approved, rejected, cancelled'
+                    });
+                }
+
+                // Check if booking exists
+                const existingBooking = await bookingsCollection.findOne({ _id: new ObjectId(bookingId) });
+                if (!existingBooking) {
+                    return res.status(404).json({ message: 'Booking not found' });
+                }
+
+                // Update booking status
+                const result = await bookingsCollection.updateOne(
+                    { _id: new ObjectId(bookingId) },
+                    {
+                        $set: {
+                            status: status,
+                            updatedAt: new Date()
+                        }
+                    }
+                );
+
+                if (result.modifiedCount === 0) {
+                    return res.status(400).json({ message: 'Failed to update booking status' });
+                }
+
+                // If booking is approved, update user role to "member" and set membership details
+                if (status === 'approved') {
+                    const userEmail = existingBooking.userEmail;
+
+                    if (userEmail) {
+                        await usersCollection.updateOne(
+                            { email: userEmail },
+                            {
+                                $set: {
+                                    role: "member",
+                                    isMember: true,
+                                    membershipDate: new Date(),
+                                    updatedAt: new Date()
+                                }
+                            }
+                        );
+                    }
+                }
+
+                res.status(200).json({
+                    message: status === 'approved'
+                        ? `Booking approved successfully and user upgraded to member`
+                        : `Booking status updated to ${status} successfully`,
+                    bookingId: bookingId,
+                    status: status,
+                    userUpgraded: status === 'approved'
+                });
+
+            } catch (error) {
+                console.error('Error updating booking status:', error.message);
+                res.status(500).json({ message: 'Failed to update booking status', error: error.message });
+            }
+        });
+
 
 
 
@@ -263,54 +353,54 @@ const startServer = async () => {
 
         // this is announcement part--------------------------------------
         app.post('/api/announcements', async (req, res) => {
-  try {
-    const db = getDB();
-    const announcementsCollection = db.collection('announcements');
+            try {
+                const db = getDB();
+                const announcementsCollection = db.collection('announcements');
 
-    const { title, content, author, date } = req.body;
+                const { title, content, author, date } = req.body;
 
-    if (!title || !content || !author) {
-      return res.status(400).json({ message: 'Title, content, and author are required' });
-    }
+                if (!title || !content || !author) {
+                    return res.status(400).json({ message: 'Title, content, and author are required' });
+                }
 
-    const announcement = {
-      title,
-      content,
-      author,
-      date: date ? new Date(date) : new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+                const announcement = {
+                    title,
+                    content,
+                    author,
+                    date: date ? new Date(date) : new Date(),
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                };
 
-    const result = await announcementsCollection.insertOne(announcement);
+                const result = await announcementsCollection.insertOne(announcement);
 
-    res.status(201).json({
-      message: 'Announcement posted successfully',
-      announcementId: result.insertedId,
-    });
-  } catch (error) {
-    console.error('Error posting announcement:', error.message);
-    res.status(500).json({ message: 'Failed to post announcement', error: error.message });
-  }
-});
+                res.status(201).json({
+                    message: 'Announcement posted successfully',
+                    announcementId: result.insertedId,
+                });
+            } catch (error) {
+                console.error('Error posting announcement:', error.message);
+                res.status(500).json({ message: 'Failed to post announcement', error: error.message });
+            }
+        });
 
-app.get('/announcements', async (req, res) => {
-  try {
-    const db = getDB();
-    const announcementsCollection = db.collection('announcements');
+        app.get('/announcements', async (req, res) => {
+            try {
+                const db = getDB();
+                const announcementsCollection = db.collection('announcements');
 
-    // Optionally sort by date descending
-    const announcements = await announcementsCollection
-      .find({})
-      .sort({ date: -1 })
-      .toArray();
+                // Optionally sort by date descending
+                const announcements = await announcementsCollection
+                    .find({})
+                    .sort({ date: -1 })
+                    .toArray();
 
-    res.status(200).json(announcements);
-  } catch (error) {
-    console.error('Error fetching announcements:', error.message);
-    res.status(500).json({ message: 'Failed to fetch announcements', error: error.message });
-  }
-});
+                res.status(200).json(announcements);
+            } catch (error) {
+                console.error('Error fetching announcements:', error.message);
+                res.status(500).json({ message: 'Failed to fetch announcements', error: error.message });
+            }
+        });
 
 
 
