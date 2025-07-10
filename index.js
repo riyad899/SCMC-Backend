@@ -554,7 +554,8 @@ const startServer = async () => {
                     status: booking.status,
                     price: booking.price || 0,
                     approvedAt: booking.updatedAt,
-                    createdAt: booking.createdAt
+                    createdAt: booking.createdAt,
+                    paymentStatus: booking.paymentStatus || 'unpaid'
                 }));
 
                 res.status(200).json(formattedBookings);
@@ -563,6 +564,78 @@ const startServer = async () => {
                 res.status(500).json({ message: "Failed to fetch approved bookings for this user", error: error.message });
             }
         });
+
+
+      app.patch('/api/bookings/payment/:id', async (req, res) => {
+  try {
+    const db = getDB();
+    const bookingsCollection = db.collection('bookings');
+    const id = req.params.id;
+    const { paymentStatus } = req.body;
+
+    if (!paymentStatus) {
+      return res.status(400).json({ message: 'Payment status is required' });
+    }
+
+    const result = await bookingsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          paymentStatus,
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ message: 'Booking not found or already updated' });
+    }
+
+    res.status(200).json({ message: '✅ Payment status updated successfully' });
+  } catch (error) {
+    console.error("Error updating payment status:", error.message);
+    res.status(500).json({ message: "Failed to update payment status", error: error.message });
+  }
+});
+
+
+app.get('/api/bookings/paid/:email', async (req, res) => {
+  try {
+    const db = getDB();
+    const bookingsCollection = db.collection('bookings');
+    const email = req.params.email;
+
+    const paidBookings = await bookingsCollection
+      .find({
+        status: "approved",
+        userEmail: email,
+        paymentStatus: "paid"
+      })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const formatted = paidBookings.map(booking => ({
+      _id: booking._id,
+      userEmail: booking.userEmail,
+      courtId: booking.courtId,
+      courtName: booking.courtName || booking.courtType || 'N/A',
+      date: booking.date,
+      slots: booking.slots,
+      status: booking.status,
+      price: booking.price || 0,
+      approvedAt: booking.approvedAt || booking.updatedAt,
+      createdAt: booking.createdAt,
+      paymentStatus: booking.paymentStatus || "unpaid"
+    }));
+
+    res.status(200).json(formatted);
+  } catch (error) {
+    console.error("Error fetching paid bookings:", error.message);
+    res.status(500).json({ message: "Failed to fetch paid bookings", error: error.message });
+  }
+});
+
+
 
         app.get('/bookings/:email', async (req, res) => {
             try {
@@ -1194,6 +1267,71 @@ const startServer = async () => {
 
 
 
+app.post('/payments', async (req, res) => {
+  try {
+    const db = getDB();
+    const paymentsCollection = db.collection('payments');
+
+    const { email, cardId, payment_status, booking } = req.body;
+
+    if (!email || !cardId || !payment_status || !booking) {
+      return res.status(400).json({ message: "Missing required payment fields" });
+    }
+
+    const paymentDoc = {
+      email,
+      cardId,
+      payment_status,
+      bookingId: booking._id,
+      courtId: booking.courtId,
+      courtName: booking.courtName,
+      slots: booking.slots,
+      date: booking.date,
+      price: booking.price,
+      approvedAt: booking.approvedAt,
+      createdAt: booking.createdAt,
+      paidAt: new Date(),
+    };
+
+    const result = await paymentsCollection.insertOne(paymentDoc);
+
+    res.status(201).json({
+      message: "Payment recorded successfully",
+      paymentId: result.insertedId
+    });
+
+  } catch (error) {
+    console.error("Payment error:", error.message);
+    res.status(500).json({ message: "Failed to save payment", error: error.message });
+  }
+});
+
+app.get('/payments', async (req, res) => {
+    try {
+        const db = getDB();
+        const paymentsCollection = db.collection('payments');
+        const payments = await paymentsCollection.find({}).toArray();
+        res.status(200).json(payments);
+    } catch (error) {
+        console.error("Error fetching payments:", error.message);
+        res.status(500).json({ message: "Failed to fetch payments", error: error.message });
+    }
+});
+
+
+
+app.get('/payments/:email', async (req, res) => {
+    try {
+        const db = getDB();
+        const paymentsCollection = db.collection('payments');
+        const email = req.params.email;
+        const payments = await paymentsCollection.find({ email: email }).toArray();
+        res.status(200).json(payments);
+    } catch (error) {
+        console.error("Error fetching payments:", error.message);
+        res.status(500).json({ message: "Failed to fetch payments", error: error.message });
+    }
+});
 
 
 
