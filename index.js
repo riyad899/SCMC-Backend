@@ -476,53 +476,6 @@ const startServer = async () => {
 
 
         // Delete a specific pending booking by ID
-        app.delete('/bookings/pending/email/:id', async (req, res) => {
-            try {
-                const db = getDB();
-                const bookingsCollection = db.collection('bookings');
-                const bookingId = req.params.id;
-
-                // Validate ObjectId format
-                if (!ObjectId.isValid(bookingId)) {
-                    return res.status(400).json({ message: 'Invalid booking ID format' });
-                }
-
-                // Check if booking exists and is pending
-                const existingBooking = await bookingsCollection.findOne({
-                    _id: new ObjectId(bookingId),
-                    status: "pending"
-                });
-
-                if (!existingBooking) {
-                    return res.status(404).json({ message: 'Pending booking not found' });
-                }
-
-                // Delete the pending booking
-                const result = await bookingsCollection.deleteOne({
-                    _id: new ObjectId(bookingId),
-                    status: "pending"
-                });
-
-                if (result.deletedCount === 0) {
-                    return res.status(400).json({ message: 'Failed to delete pending booking' });
-                }
-
-                res.status(200).json({
-                    message: 'Pending booking deleted successfully',
-                    deletedBooking: {
-                        id: bookingId,
-                        userEmail: existingBooking.userEmail,
-                        courtId: existingBooking.courtId,
-                        date: existingBooking.date,
-                        slots: existingBooking.slots
-                    }
-                });
-
-            } catch (error) {
-                console.error('Error deleting pending booking:', error.message);
-                res.status(500).json({ message: 'Failed to delete pending booking', error: error.message });
-            }
-        });
 
         // Get approved bookings for a specific user email
         app.get('/bookings/approved/:email', async (req, res) => {
@@ -663,15 +616,52 @@ app.get('/api/bookings/paid/:email', async (req, res) => {
                 const bookingsCollection = db.collection('bookings');
                 const bookingId = req.params.id;
 
+                console.log('🗑️ Attempting to delete booking with ID:', bookingId);
+
+                // Validate ObjectId format
+                if (!ObjectId.isValid(bookingId)) {
+                    return res.status(400).json({ message: 'Invalid booking ID format' });
+                }
+
+                // First, find the booking to get its details before deletion
+                const existingBooking = await bookingsCollection.findOne({ _id: new ObjectId(bookingId) });
+
+                if (!existingBooking) {
+                    return res.status(404).json({ message: 'Booking not found' });
+                }
+
+                console.log('📋 Found booking to delete:', {
+                    id: existingBooking._id,
+                    userEmail: existingBooking.userEmail,
+                    status: existingBooking.status,
+                    courtId: existingBooking.courtId
+                });
+
+                // Delete the booking
                 const result = await bookingsCollection.deleteOne({ _id: new ObjectId(bookingId) });
 
                 if (result.deletedCount === 0) {
-                    return res.status(404).json({ message: 'Booking not found or already deleted' });
+                    return res.status(400).json({ message: 'Failed to delete booking' });
                 }
 
-                res.status(200).json({ message: 'Booking deleted successfully' });
+                console.log('✅ Booking deleted successfully');
+
+                res.status(200).json({
+                    message: 'Booking deleted successfully',
+                    deletedBooking: {
+                        id: bookingId,
+                        userEmail: existingBooking.userEmail,
+                        courtId: existingBooking.courtId,
+                        courtName: existingBooking.courtName || existingBooking.courtType || 'N/A',
+                        date: existingBooking.date,
+                        slots: existingBooking.slots,
+                        status: existingBooking.status,
+                        paymentStatus: existingBooking.paymentStatus || 'unpaid',
+                        price: existingBooking.price || 0
+                    }
+                });
             } catch (error) {
-                console.error('Error deleting booking:', error.message);
+                console.error('❌ Error deleting booking:', error.message);
                 res.status(500).json({ message: 'Failed to delete booking', error: error.message });
             }
         });
@@ -1267,7 +1257,7 @@ app.get('/api/bookings/paid/:email', async (req, res) => {
 
 
 
-app.post('/payments', async (req, res) => {
+app.post('  ', async (req, res) => {
   try {
     const db = getDB();
     const paymentsCollection = db.collection('payments');
