@@ -2,21 +2,36 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const { connectDB, getDB } = require('./config/db');
-const { ObjectId } = require('mongodb'); // Make sure to import this
+const { ObjectId } = require('mongodb');
 const paymentRoutes = require('./routes/payment');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Initialize Stripe with your secret key
-
+const admin = require('firebase-admin');
 
 dotenv.config();
+
+// Initialize Stripe
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
+// Initialize Firebase Admin (only if not already initialized)
+if (!admin.apps.length) {
+    const serviceAccount = require('./scms-project-47bd9-firebase-adminsdk-fbsvc-7a7895e115.json');
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true,
+}));
 app.use(express.json());
 app.use('/api', paymentRoutes);
+
+
+
 
 // Start Server
 const startServer = async () => {
@@ -24,8 +39,33 @@ const startServer = async () => {
         await connectDB();
         const db = getDB();
 
-        // ============== STRIPE PAYMENT INTENT ENDPOINT ==============
+        // ============== FIREBASE TOKEN VERIFICATION MIDDLEWARE ==============
+        const verifyFBToken = async (req, res, next) => {
+            const authHeader = req.headers.authorization;
+            console.log(authHeader)
+            if (!authHeader) {
+                return res.status(401).send({ message: 'unauthorized access' });
+            }
+            const token = authHeader.split(' ')[1];
+            if (!token) {
+                return res.status(401).send({ message: 'unauthorized access' });
+            }
 
+            // verify the token
+            try {
+                const decoded = await admin.auth().verifyIdToken(token);
+                req.decoded = decoded;
+                next();
+            }
+            catch (error) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+        };
+
+        // Test endpoint for token verification
+        app.get('/secure-data', verifyFBToken, (req, res) => {
+            res.send({ message: `Hello ${req.decoded.email}, your token is verified.` });
+        });
 
 
 
@@ -519,74 +559,74 @@ const startServer = async () => {
         });
 
 
-      app.patch('/api/bookings/payment/:id', async (req, res) => {
-  try {
-    const db = getDB();
-    const bookingsCollection = db.collection('bookings');
-    const id = req.params.id;
-    const { paymentStatus } = req.body;
+        app.patch('/api/bookings/payment/:id', async (req, res) => {
+            try {
+                const db = getDB();
+                const bookingsCollection = db.collection('bookings');
+                const id = req.params.id;
+                const { paymentStatus } = req.body;
 
-    if (!paymentStatus) {
-      return res.status(400).json({ message: 'Payment status is required' });
-    }
+                if (!paymentStatus) {
+                    return res.status(400).json({ message: 'Payment status is required' });
+                }
 
-    const result = await bookingsCollection.updateOne(
-      { _id: new ObjectId(id) },
-      {
-        $set: {
-          paymentStatus,
-          updatedAt: new Date()
-        }
-      }
-    );
+                const result = await bookingsCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: {
+                            paymentStatus,
+                            updatedAt: new Date()
+                        }
+                    }
+                );
 
-    if (result.modifiedCount === 0) {
-      return res.status(404).json({ message: 'Booking not found or already updated' });
-    }
+                if (result.modifiedCount === 0) {
+                    return res.status(404).json({ message: 'Booking not found or already updated' });
+                }
 
-    res.status(200).json({ message: '✅ Payment status updated successfully' });
-  } catch (error) {
-    console.error("Error updating payment status:", error.message);
-    res.status(500).json({ message: "Failed to update payment status", error: error.message });
-  }
-});
+                res.status(200).json({ message: '✅ Payment status updated successfully' });
+            } catch (error) {
+                console.error("Error updating payment status:", error.message);
+                res.status(500).json({ message: "Failed to update payment status", error: error.message });
+            }
+        });
 
 
-app.get('/api/bookings/paid/:email', async (req, res) => {
-  try {
-    const db = getDB();
-    const bookingsCollection = db.collection('bookings');
-    const email = req.params.email;
+        app.get('/api/bookings/paid/:email', async (req, res) => {
+            try {
+                const db = getDB();
+                const bookingsCollection = db.collection('bookings');
+                const email = req.params.email;
 
-    const paidBookings = await bookingsCollection
-      .find({
-        status: "approved",
-        userEmail: email,
-        paymentStatus: "paid"
-      })
-      .sort({ createdAt: -1 })
-      .toArray();
+                const paidBookings = await bookingsCollection
+                    .find({
+                        status: "approved",
+                        userEmail: email,
+                        paymentStatus: "paid"
+                    })
+                    .sort({ createdAt: -1 })
+                    .toArray();
 
-    const formatted = paidBookings.map(booking => ({
-      _id: booking._id,
-      userEmail: booking.userEmail,
-      courtId: booking.courtId,
-      courtName: booking.courtName || booking.courtType || 'N/A',
-      date: booking.date,
-      slots: booking.slots,
-      status: booking.status,
-      price: booking.price || 0,
-      approvedAt: booking.approvedAt || booking.updatedAt,
-      createdAt: booking.createdAt,
-      paymentStatus: booking.paymentStatus || "unpaid"
-    }));
+                const formatted = paidBookings.map(booking => ({
+                    _id: booking._id,
+                    userEmail: booking.userEmail,
+                    courtId: booking.courtId,
+                    courtName: booking.courtName || booking.courtType || 'N/A',
+                    date: booking.date,
+                    slots: booking.slots,
+                    status: booking.status,
+                    price: booking.price || 0,
+                    approvedAt: booking.approvedAt || booking.updatedAt,
+                    createdAt: booking.createdAt,
+                    paymentStatus: booking.paymentStatus || "unpaid"
+                }));
 
-    res.status(200).json(formatted);
-  } catch (error) {
-    console.error("Error fetching paid bookings:", error.message);
-    res.status(500).json({ message: "Failed to fetch paid bookings", error: error.message });
-  }
-});
+                res.status(200).json(formatted);
+            } catch (error) {
+                console.error("Error fetching paid bookings:", error.message);
+                res.status(500).json({ message: "Failed to fetch paid bookings", error: error.message });
+            }
+        });
 
 
 
@@ -1233,95 +1273,95 @@ app.get('/api/bookings/paid/:email', async (req, res) => {
 
 
         // ============== PAYMENTS MANAGEMENT ==============
- app.post('/create-payment-intent', async (req, res) => {
-    try {
-        const { amount, currency, paymentMethodId, bookingId } = req.body;
+        app.post('/create-payment-intent', async (req, res) => {
+            try {
+                const { amount, currency, paymentMethodId, bookingId } = req.body;
 
-        const paymentIntent = await stripe.paymentIntents.create({
-            amount: amount,
-            currency: currency || 'usd',
-            automatic_payment_methods: { enabled: true },
-            metadata: {  // Move these to metadata
-                paymentMethodId: paymentMethodId,
-                bookingId: bookingId
+                const paymentIntent = await stripe.paymentIntents.create({
+                    amount: amount,
+                    currency: currency || 'usd',
+                    automatic_payment_methods: { enabled: true },
+                    metadata: {  // Move these to metadata
+                        paymentMethodId: paymentMethodId,
+                        bookingId: bookingId
+                    }
+                });
+
+                res.json({
+                    clientSecret: paymentIntent.client_secret
+                });
+            } catch (error) {
+                res.status(500).json({ error: error.message });
             }
         });
 
-        res.json({
-            clientSecret: paymentIntent.client_secret
+
+
+        app.post('  ', async (req, res) => {
+            try {
+                const db = getDB();
+                const paymentsCollection = db.collection('payments');
+
+                const { email, cardId, payment_status, booking } = req.body;
+
+                if (!email || !cardId || !payment_status || !booking) {
+                    return res.status(400).json({ message: "Missing required payment fields" });
+                }
+
+                const paymentDoc = {
+                    email,
+                    cardId,
+                    payment_status,
+                    bookingId: booking._id,
+                    courtId: booking.courtId,
+                    courtName: booking.courtName,
+                    slots: booking.slots,
+                    date: booking.date,
+                    price: booking.price,
+                    approvedAt: booking.approvedAt,
+                    createdAt: booking.createdAt,
+                    paidAt: new Date(),
+                };
+
+                const result = await paymentsCollection.insertOne(paymentDoc);
+
+                res.status(201).json({
+                    message: "Payment recorded successfully",
+                    paymentId: result.insertedId
+                });
+
+            } catch (error) {
+                console.error("Payment error:", error.message);
+                res.status(500).json({ message: "Failed to save payment", error: error.message });
+            }
         });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
+
+        app.get('/payments', async (req, res) => {
+            try {
+                const db = getDB();
+                const paymentsCollection = db.collection('payments');
+                const payments = await paymentsCollection.find({}).toArray();
+                res.status(200).json(payments);
+            } catch (error) {
+                console.error("Error fetching payments:", error.message);
+                res.status(500).json({ message: "Failed to fetch payments", error: error.message });
+            }
+        });
 
 
 
-app.post('  ', async (req, res) => {
-  try {
-    const db = getDB();
-    const paymentsCollection = db.collection('payments');
-
-    const { email, cardId, payment_status, booking } = req.body;
-
-    if (!email || !cardId || !payment_status || !booking) {
-      return res.status(400).json({ message: "Missing required payment fields" });
-    }
-
-    const paymentDoc = {
-      email,
-      cardId,
-      payment_status,
-      bookingId: booking._id,
-      courtId: booking.courtId,
-      courtName: booking.courtName,
-      slots: booking.slots,
-      date: booking.date,
-      price: booking.price,
-      approvedAt: booking.approvedAt,
-      createdAt: booking.createdAt,
-      paidAt: new Date(),
-    };
-
-    const result = await paymentsCollection.insertOne(paymentDoc);
-
-    res.status(201).json({
-      message: "Payment recorded successfully",
-      paymentId: result.insertedId
-    });
-
-  } catch (error) {
-    console.error("Payment error:", error.message);
-    res.status(500).json({ message: "Failed to save payment", error: error.message });
-  }
-});
-
-app.get('/payments', async (req, res) => {
-    try {
-        const db = getDB();
-        const paymentsCollection = db.collection('payments');
-        const payments = await paymentsCollection.find({}).toArray();
-        res.status(200).json(payments);
-    } catch (error) {
-        console.error("Error fetching payments:", error.message);
-        res.status(500).json({ message: "Failed to fetch payments", error: error.message });
-    }
-});
-
-
-
-app.get('/payments/:email', async (req, res) => {
-    try {
-        const db = getDB();
-        const paymentsCollection = db.collection('payments');
-        const email = req.params.email;
-        const payments = await paymentsCollection.find({ email: email }).toArray();
-        res.status(200).json(payments);
-    } catch (error) {
-        console.error("Error fetching payments:", error.message);
-        res.status(500).json({ message: "Failed to fetch payments", error: error.message });
-    }
-});
+        app.get('/payments/:email', async (req, res) => {
+            try {
+                const db = getDB();
+                const paymentsCollection = db.collection('payments');
+                const email = req.params.email;
+                const payments = await paymentsCollection.find({ email: email }).toArray();
+                res.status(200).json(payments);
+            } catch (error) {
+                console.error("Error fetching payments:", error.message);
+                res.status(500).json({ message: "Failed to fetch payments", error: error.message });
+            }
+        });
 
 
 

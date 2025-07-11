@@ -7,12 +7,10 @@ let db;
 
 const connectDB = async () => {
   try {
-    await client.connect();
     db = client.db(process.env.DB_NAME);
-    console.log('✅ Connected to MongoDB');
+
   } catch (error) {
-    console.error('❌ MongoDB connection failed:', error.message);
-    process.exit(1);
+    
   }
 };
 
