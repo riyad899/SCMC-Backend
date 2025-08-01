@@ -22,10 +22,33 @@ if (!admin.apps.length) {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// CORS configuration - Allow specific origins and all others
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5175',
+  'https://sports-clubs.vercel.app',
+  'https://sports-club-gray.vercel.app',
+  'https://fancy-longma-595399.netlify.app'
+];
+
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+
+    // Allow all origins for now (you can restrict this later if needed)
+    return callback(null, true);
+
+    // Uncomment below if you want to restrict to specific origins only:
+    // if (allowedOrigins.includes(origin)) {
+    //   callback(null, true);
+    // } else {
+    //   callback(new Error('Not allowed by CORS'));
+    // }
+  },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use('/api', paymentRoutes);
