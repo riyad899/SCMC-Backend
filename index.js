@@ -35,10 +35,20 @@ if (!admin.apps.length) {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// CORS configuration - Allow specific origins and all others
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5175',
+  'https://sports-clubs.vercel.app',
+  'https://sports-club-gray.vercel.app',
+  'https://fancy-longma-595399.netlify.app'
+];
+
 app.use(cors({
-    origin: true,
-    credentials: true,
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use('/api', paymentRoutes);
