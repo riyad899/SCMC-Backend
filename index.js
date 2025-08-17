@@ -13,7 +13,20 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Initialize Firebase Admin (only if not already initialized)
 if (!admin.apps.length) {
-    const serviceAccount = require('./scms-project-47bd9-firebase-adminsdk-fbsvc-7a7895e115.json');
+    // Use environment variables for Firebase config in production
+    const serviceAccount = {
+        "type": "service_account",
+        "project_id": process.env.FIREBASE_PROJECT_ID,
+        "private_key_id": process.env.FIREBASE_PRIVATE_KEY_ID,
+        "private_key": process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        "client_email": process.env.FIREBASE_CLIENT_EMAIL,
+        "client_id": process.env.FIREBASE_CLIENT_ID,
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": process.env.FIREBASE_CLIENT_X509_CERT_URL
+    };
+    
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
     });
@@ -24,8 +37,8 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5173',
-  credentials: true,
+    origin: true,
+    credentials: true,
 }));
 app.use(express.json());
 app.use('/api', paymentRoutes);
@@ -1297,7 +1310,7 @@ const startServer = async () => {
 
 
 
-        app.post('  ', async (req, res) => {
+        app.post('/payments', async (req, res) => {
             try {
                 const db = getDB();
                 const paymentsCollection = db.collection('payments');
@@ -1370,13 +1383,38 @@ const startServer = async () => {
         app.get('/', (req, res) => {
             res.send('🏀 Sports Club Management System API Running');
         });
-        app.listen(PORT, () => {
-            console.log(`🚀 Server running on port ${PORT}`);
-        });
+        
+        // Export the app for Vercel
+        return app;
 
     } catch (error) {
         console.error('❌ Error starting server:', error.message);
+        throw error;
     }
 };
 
-startServer();
+// Initialize the server
+let serverPromise;
+
+const getApp = async () => {
+    if (!serverPromise) {
+        serverPromise = startServer();
+    }
+    return serverPromise;
+};
+
+// Export for Vercel
+module.exports = async (req, res) => {
+    const app = await getApp();
+    return app(req, res);
+};
+
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+    const PORT = process.env.PORT || 5000;
+    startServer().then(app => {
+        app.listen(PORT, () => {
+            console.log(`🚀 Server running on port ${PORT}`);
+        });
+    });
+}
